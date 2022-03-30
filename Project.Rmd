@@ -1,0 +1,238 @@
+---
+title: 'Practice'
+author: 'Tom Kang, Will Li'
+date: "3/30/2022"
+output:
+  pdf_document: default
+  html_document:
+    keep_md: yes
+    number_sections: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load Data
+```{r}
+raw_aba = read.csv("abalone.data")
+colnames(raw_aba) = c("Sex","Length","Diameter","Height","Whole weight","Shucked weight","Viscera weight","Shell weight","Rings")
+head(raw_aba)
+```
+
+
+## EDA
+```{r}
+table(raw_aba$Rings)
+```
+
+```{r}
+hist(raw_aba$Rings,breaks=29,main="Rings",xlab="rings",ylab="Count")
+```
+
+## Data Preprocessing
+### Data Cleaning
+```{r}
+# aba[which(aba$Height == 0),]
+
+# aba[which(aba$Sex == "I"),]
+
+aba_1 = raw_aba[-c(which(raw_aba$Height == 0)),]
+```
+
+
+### Data Normalization
+```{r}
+norm <- function(x) {(x - min(x))/(max(x) - min(x))}
+```
+
+```{r}
+aba_2 = aba_1
+
+for (i in 2:8){
+  aba_2[,i] = norm(aba_1[,i])
+}
+```
+
+### One-Hot Coding
+```{r}
+library(dummies)
+```
+
+```{r}
+# aba_3 <- data.frame(predict(dummyVars(" ~ .", data=aba_2),aba_2))
+aba_3 <- dummy.data.frame(aba_2, names=c("Sex"), sep="_")
+```
+
+### Outlier Detection
+```{r}
+library(OutlierDetection)
+library(OutliersO3)
+library(outliers)
+```
+
+```{r}
+X = aba_1[2:8]
+OD = OutlierDetection(X,depth = TRUE,dense = TRUE, distance = TRUE, dispersion = TRUE)
+```
+
+```{r}
+Z = scores(X,type="z",prob=0.95)
+MAD = scores(X,type="mad",prob=0.95)
+IQR = scores(X,type="iqr",lim=1.5)
+```
+
+```{r}
+Z_out = which(Z == TRUE)
+MAD_out = which(MAD == TRUE)
+IQR_out = which(IQR == TRUE)
+
+out_1 = intersect(Z_out,MAD_out)
+out_2 = intersect(out_1,IQR_out)
+out = intersect(out_2,OD$`Location of Outlier`)
+```
+
+```{r}
+aba = aba_3[-c(out),]
+```
+
+### Final Ready-to-use Data
+```{r}
+head(aba)
+```
+
+### Train-Test Split
+```{r}
+set.seed(527)
+train = sample(1:nrow(aba), nrow(aba)*0.7)
+aba.train = aba[train,]
+aba.test = aba[-train,]
+aba.train.x = aba.train[,-c(11)]
+aba.train.y = aba.train[,c(11)]
+aba.test.x = aba.test[,-c(11)]
+aba.test.y = aba.test[,c(11)]
+```
+
+
+## Regression
+```{r}
+baselm = lm(Rings~.-Sex_M,data = aba.train)
+summary(baselm)
+```
+```{r}
+plot(baselm)
+```
+```{r}
+## Define a function that outputs train_mse, test_mse, and accuracy
+summ <- function(model) {
+  print(paste("train_mse: ",mean((predict(model,aba.train.x) - aba.train.y)^2)))
+  print(paste("test_mse: ",mean((predict(model,aba.test.x) - aba.test.y)^2)))
+  prediction = round(predict(model,aba.test.x),0)
+  print(paste("accuracy: ",mean(prediction == aba.test.y)))
+}
+```
+
+```{r}
+summ(baselm)
+```
+
+```{r}
+aba.train.lm = aba.train[-c(2305,480,294,2051),]
+aba.train.x.lm = aba.train.x[-c(2305,480,294,2051),]
+aba.train.y.lm = aba.train.y[-c(2305,480,294,2051)]
+```
+
+```{r}
+baselm_1 = lm(Rings~.-Sex_M-Length-Sex_F,data = aba.train.lm)
+summary(baselm_1)
+summ(baselm_1)
+```
+
+## Feature SELECTION
+```{r}
+library(leaps)
+```
+
+```{r}
+bss.summ = summary(regsubsets(Rings~.-Sex_M,data = aba.train.lm,nvmax = 9))
+bss.summ
+```
+
+```{r}
+plot(bss.summ$adjr2,xlab="Predictors", ylab = "Adjusted R^2", type = "l")
+plot(bss.summ$cp,xlab="Predictors", ylab = "Cp", type = "l")
+plot(bss.summ$bic,xlab="Predictors", ylab = "BIC", type = "l")
+```
+## Poly
+```{r}
+polylm = lm(Rings~.+I(`Shell weight`^5)+I(`Shucked weight`^3)+I(`Diameter`^3)-Sex_M-Length-Sex_F,data = aba.train.lm)
+summary(polylm)
+summ(polylm)
+```
+
+
+## Regularizaiton
+```{r}
+library(glmnet)
+```
+```{r}
+reg_X = model.matrix(Rings~.-Sex_M-Length-Sex_F,aba)[,-1]
+
+set.seed(527)
+cv.out = cv.glmnet(reg_X[train,],aba.train.y, alpha=1)
+bestlambda = cv.out$lambda.min
+```
+
+```{r}
+grid = 10^seq(10,-2,length=100)
+
+ridge.mod = glmnet(reg_X[train,],aba.train.y,alpha = 1,lambda = grid,thresh = 1e-12)
+
+ridge.pred=predict(ridge.mod,s=bestlambda,newx=reg_X[-train,])
+
+print(paste("Test Mse:",mean((ridge.pred-aba.test.y)^2)))
+print(paste("Accuracy:",mean(round(ridge.pred,0) == aba.test.y)))
+
+```
+
+## Tree
+```{r}
+library(tree)
+```
+
+```{r}
+treee = tree(Rings~.,data.frame(aba.train))
+summary(treee)
+```
+
+```{r}
+plot(treee)
+
+text(treee,pretty=0)
+```
+```{r}
+tree_prediction = predict(treee,newdata = data.frame(aba.test.x))
+print(paste("Test Mse:",mean((tree_prediction-aba.test.y)^2)))
+print(paste("Accuracy:",mean(round(tree_prediction,0) == aba.test.y)))
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
