@@ -1,7 +1,7 @@
 ---
 title: 'Practice'
-author: 'Tom Kang, Will Li'
-date: "3/30/2022"
+author: 'Tom Kang'
+date: "2/23/2020"
 output:
   pdf_document: default
   html_document:
@@ -15,8 +15,8 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## Load Data
 ```{r}
-raw_aba = read.csv("abalone.data")
-colnames(raw_aba) = c("Sex","Length","Diameter","Height","Whole weight","Shucked weight","Viscera weight","Shell weight","Rings")
+raw_aba = read.csv("abalone.csv")
+colnames(raw_aba) = c("Sex","Length","Diameter","Height","Whole_weight","Shucked_weight","Viscera_weight","Shell_weight","Rings")
 head(raw_aba)
 ```
 
@@ -29,6 +29,11 @@ table(raw_aba$Rings)
 ```{r}
 hist(raw_aba$Rings,breaks=29,main="Rings",xlab="rings",ylab="Count")
 ```
+```{r}
+summary(raw_aba)
+```
+
+
 
 ## Data Preprocessing
 ### Data Cleaning
@@ -101,6 +106,11 @@ aba = aba_3[-c(out),]
 head(aba)
 ```
 
+```{r}
+summary(aba)
+```
+
+
 ### Train-Test Split
 ```{r}
 set.seed(527)
@@ -119,6 +129,10 @@ aba.test.y = aba.test[,c(11)]
 baselm = lm(Rings~.-Sex_M,data = aba.train)
 summary(baselm)
 ```
+
+
+
+
 ```{r}
 plot(baselm)
 ```
@@ -165,7 +179,7 @@ plot(bss.summ$bic,xlab="Predictors", ylab = "BIC", type = "l")
 ```
 ## Poly
 ```{r}
-polylm = lm(Rings~.+I(`Shell weight`^5)+I(`Shucked weight`^3)+I(`Diameter`^3)-Sex_M-Length-Sex_F,data = aba.train.lm)
+polylm = lm(Rings~.+I('Shell weight'^5)+I('Shucked weight'^3)+I('Diameter'^3)-Sex_M-Length-Sex_F,data = aba.train.lm)
 summary(polylm)
 summ(polylm)
 ```
@@ -216,17 +230,61 @@ print(paste("Test Mse:",mean((tree_prediction-aba.test.y)^2)))
 print(paste("Accuracy:",mean(round(tree_prediction,0) == aba.test.y)))
 ```
 
+## ANN
+```{r}
+library(neuralnet)
+```
+
+```{r}
+aba.ann = aba.train.lm
+aba.ann$Rings = ((aba.ann$Rings)-1)/28
+aba.ann
+```
 
 
 
+```{r}
+ann <- neuralnet(Rings~Sex_I+Sex_F+Diameter+Height+Whole_weight+Shucked_weight+Viscera_weight+Shell_weight,data=aba.ann,linear.output = F,hidden = c(5))
+revert <- function(x) {(x*28)+1}
+```
 
 
+```{r}
+ann.data = data.frame(prediction(ann)$data)
+ann.result = data.frame(prediction(ann)$rep1)
+mean(((revert(ann.result$Rings))-revert(ann.data$Rings))^2)
+mean(abs((revert(ann.result$Rings))-revert(ann.data$Rings)))
+```
+
+```{r}
+plot(ann)
+```
 
 
+```{r}
+mean((revert(predict(ann,aba.test.x))-aba.test.y)^2)
+mean(abs(revert(predict(ann,aba.test.x))-aba.test.y))
+```
+
+## RF
+```{r}
+library(randomForest)
+```
 
 
+```{r}
+rf <- randomForest(Rings~.,data=aba.ann,mtry=5,ntree=100,importance=TRUE)
+```
 
+```{r}
+prediction = round(revert(predict(rf,newdata=aba.ann)))
+mean((prediction-aba.ann$Rings)^2)
+mean(abs(prediction-aba.ann$Rings))
 
+prediction.test = round(revert(predict(rf,newdata=aba.test.x)))
+mean((prediction.test-aba.test.y)^2)
+mean(abs(prediction.test-aba.test.y))
+```
 
 
 
