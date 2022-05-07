@@ -1,7 +1,7 @@
 ---
 title: 'Practice'
-author: 'Tom Kang'
-date: "2/23/2020"
+author: ''
+date: ""
 output:
   pdf_document: default
   html_document:
@@ -10,7 +10,7 @@ output:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE,tidy = TRUE)
 ```
 
 ## Load Data
