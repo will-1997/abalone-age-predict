@@ -1,7 +1,7 @@
 ---
-title: 'Practice'
-author: ''
-date: ""
+title: 'Final project 527'
+author: 'Tom Kang & Will Li'
+date: "5/7/2022"
 output:
   pdf_document: default
   html_document:
@@ -10,8 +10,10 @@ output:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE,tidy = TRUE)
+knitr::opts_chunk$set(echo = TRUE)
 ```
+
+
 
 ## Load Data
 ```{r}
@@ -21,6 +23,7 @@ head(raw_aba)
 ```
 
 
+
 ## EDA
 ```{r}
 table(raw_aba$Rings)
@@ -28,27 +31,21 @@ table(raw_aba$Rings)
 
 ```{r}
 hist(raw_aba$Rings,breaks=29,main="Rings",xlab="rings",ylab="Count")
-```
-```{r}
 summary(raw_aba)
 ```
 
 
 
 ## Data Preprocessing
+
 ### Data Cleaning
 ```{r}
-# aba[which(aba$Height == 0),]
-
-# aba[which(aba$Sex == "I"),]
-
 aba_1 = raw_aba[-c(which(raw_aba$Height == 0)),]
 ```
 
-
 ### Data Normalization
 ```{r}
-norm <- function(x) {(x - min(x))/(max(x) - min(x))}
+norm <- function(x) {(x - min(x))/(max(x)-min(x))}
 ```
 
 ```{r}
@@ -59,13 +56,9 @@ for (i in 2:8){
 }
 ```
 
-### One-Hot Coding
+### One-Hot Encoding
 ```{r}
 library(dummies)
-```
-
-```{r}
-# aba_3 <- data.frame(predict(dummyVars(" ~ .", data=aba_2),aba_2))
 aba_3 <- dummy.data.frame(aba_2, names=c("Sex"), sep="_")
 ```
 
@@ -104,12 +97,8 @@ aba = aba_3[-c(out),]
 ### Final Ready-to-use Data
 ```{r}
 head(aba)
-```
-
-```{r}
 summary(aba)
 ```
-
 
 ### Train-Test Split
 ```{r}
@@ -118,20 +107,22 @@ train = sample(1:nrow(aba), nrow(aba)*0.7)
 aba.train = aba[train,]
 aba.test = aba[-train,]
 aba.train.x = aba.train[,-c(11)]
+original.train.y = aba.train[,c(11)]
+aba.train[,c(11)] = norm(aba.train[,c(11)])
 aba.train.y = aba.train[,c(11)]
 aba.test.x = aba.test[,-c(11)]
 aba.test.y = aba.test[,c(11)]
 ```
 
+```{r}
+revert <- function(x) {(x*(max(original.train.y)-min(original.train.y)))+min(original.train.y)}
+```
 
-## Regression
+## Simple Linear Regression
 ```{r}
 baselm = lm(Rings~.-Sex_M,data = aba.train)
 summary(baselm)
 ```
-
-
-
 
 ```{r}
 plot(baselm)
@@ -139,15 +130,19 @@ plot(baselm)
 ```{r}
 ## Define a function that outputs train_mse, test_mse, and accuracy
 summ <- function(model) {
-  print(paste("train_mse: ",mean((predict(model,aba.train.x) - aba.train.y)^2)))
-  print(paste("test_mse: ",mean((predict(model,aba.test.x) - aba.test.y)^2)))
-  prediction = round(predict(model,aba.test.x),0)
-  print(paste("accuracy: ",mean(prediction == aba.test.y)))
+  prediction = revert(predict(model,aba.test.x))
+  print(paste("train_mse: ",mean((revert(predict(model,aba.train.x)) - revert(aba.train.y))^2)))
+  print(paste("test_mse: ",mean((prediction - aba.test.y)^2)))
+  print(paste("test_mae: ",mean(abs(prediction - aba.test.y))))
 }
 ```
 
 ```{r}
 summ(baselm)
+```
+
+```{r}
+table(round(revert(predict(baselm,aba.test.x)))-aba.test.y)
 ```
 
 ```{r}
@@ -161,6 +156,8 @@ baselm_1 = lm(Rings~.-Sex_M-Length-Sex_F,data = aba.train.lm)
 summary(baselm_1)
 summ(baselm_1)
 ```
+
+
 
 ## Feature SELECTION
 ```{r}
@@ -177,94 +174,18 @@ plot(bss.summ$adjr2,xlab="Predictors", ylab = "Adjusted R^2", type = "l")
 plot(bss.summ$cp,xlab="Predictors", ylab = "Cp", type = "l")
 plot(bss.summ$bic,xlab="Predictors", ylab = "BIC", type = "l")
 ```
-## Poly
+
+
+
+## Polynomial Feature Mapping
 ```{r}
-polylm = lm(Rings~.+I('Shell weight'^5)+I('Shucked weight'^3)+I('Diameter'^3)-Sex_M-Length-Sex_F,data = aba.train.lm)
+polylm = lm(Rings~.+I(`Shell_weight`^5)+I(`Shucked_weight`^3)+I(`Diameter`^3)-Sex_M-Length-Sex_F,data = aba.train.lm)
 summary(polylm)
 summ(polylm)
 ```
 
 
-## Regularizaiton
-```{r}
-library(glmnet)
-```
-```{r}
-reg_X = model.matrix(Rings~.-Sex_M-Length-Sex_F,aba)[,-1]
 
-set.seed(527)
-cv.out = cv.glmnet(reg_X[train,],aba.train.y, alpha=1)
-bestlambda = cv.out$lambda.min
-```
-
-```{r}
-grid = 10^seq(10,-2,length=100)
-
-ridge.mod = glmnet(reg_X[train,],aba.train.y,alpha = 1,lambda = grid,thresh = 1e-12)
-
-ridge.pred=predict(ridge.mod,s=bestlambda,newx=reg_X[-train,])
-
-print(paste("Test Mse:",mean((ridge.pred-aba.test.y)^2)))
-print(paste("Accuracy:",mean(round(ridge.pred,0) == aba.test.y)))
-
-```
-
-## Tree
-```{r}
-library(tree)
-```
-
-```{r}
-treee = tree(Rings~.,data.frame(aba.train))
-summary(treee)
-```
-
-```{r}
-plot(treee)
-
-text(treee,pretty=0)
-```
-```{r}
-tree_prediction = predict(treee,newdata = data.frame(aba.test.x))
-print(paste("Test Mse:",mean((tree_prediction-aba.test.y)^2)))
-print(paste("Accuracy:",mean(round(tree_prediction,0) == aba.test.y)))
-```
-
-## ANN
-```{r}
-library(neuralnet)
-```
-
-```{r}
-aba.ann = aba.train.lm
-aba.ann$Rings = ((aba.ann$Rings)-1)/28
-aba.ann
-```
-
-
-
-```{r}
-ann <- neuralnet(Rings~Sex_I+Sex_F+Diameter+Height+Whole_weight+Shucked_weight+Viscera_weight+Shell_weight,data=aba.ann,linear.output = F,hidden = c(5))
-revert <- function(x) {(x*28)+1}
-```
-
-
-```{r}
-ann.data = data.frame(prediction(ann)$data)
-ann.result = data.frame(prediction(ann)$rep1)
-mean(((revert(ann.result$Rings))-revert(ann.data$Rings))^2)
-mean(abs((revert(ann.result$Rings))-revert(ann.data$Rings)))
-```
-
-```{r}
-plot(ann)
-```
-
-
-```{r}
-mean((revert(predict(ann,aba.test.x))-aba.test.y)^2)
-mean(abs(revert(predict(ann,aba.test.x))-aba.test.y))
-```
 
 ## RF
 ```{r}
@@ -273,18 +194,98 @@ library(randomForest)
 
 
 ```{r}
-rf <- randomForest(Rings~.,data=aba.ann,mtry=5,ntree=100,importance=TRUE)
-```
+rf <- randomForest(Rings~.,data=aba.train, mtry=5,ntree=100,importance=TRUE)
+prediction = revert(predict(rf,newdata=aba.train))
+mean((prediction-aba.train$Rings)^2)
+mean(abs(prediction-aba.train$Rings))
 
-```{r}
-prediction = round(revert(predict(rf,newdata=aba.ann)))
-mean((prediction-aba.ann$Rings)^2)
-mean(abs(prediction-aba.ann$Rings))
-
-prediction.test = round(revert(predict(rf,newdata=aba.test.x)))
+prediction.test = revert(predict(rf,newdata=aba.test.x))
 mean((prediction.test-aba.test.y)^2)
 mean(abs(prediction.test-aba.test.y))
 ```
+
+
+```{r}
+nt=c()
+nt.var = c()
+nt.error = c()
+for (i in seq(1,100,5)){
+  rf.cv = rfcv(aba.train.x ,aba.train$Rings,cv.fold = 10, mtry=function(p) max(1, floor(sqrt(p))), ntree = i)
+  nt = c(nt,i)
+  nt.var = c(nt.var,rf.cv$n.var[which.min(rf.cv$error.cv)[[1]]])
+  nt.error = c(nt.error,min(rf.cv$error.cv))
+} 
+
+```
+
+```{r}
+nt.var[which.min(nt.error)]
+nt[which.min(nt.error)]
+```
+
+### Final Model
+```{r}
+rf.best = randomForest(Rings~.,data=aba.train, mtry=nt.var[which.min(nt.error)],ntree=nt[which.min(nt.error)],importance=TRUE)
+prediction.best = revert(predict(rf.best,newdata=aba.train))
+mean((prediction.best-aba.train$Rings)^2)
+mean(abs(prediction.best-aba.train$Rings))
+
+prediction.test.best = revert(predict(rf.best,newdata=aba.test.x))
+mean((prediction.test.best-aba.test.y)^2)
+mean(abs(prediction.test.best-aba.test.y))
+```
+
+```{r}
+rf.cv$n.var[which.min(rf.cv$error.cv)[[1]]]
+min(rf.cv$error.cv)
+table(round(prediction.test.best-aba.test.y))
+```
+
+
+
+## ANN
+```{r}
+library(neuralnet)
+```
+### Cross Validation 
+#### NOTE: IT TAKES ABOUT 1-1.5 HOURS TO FINISH THE CROSS VALIDATION PROCESS 
+```{r}
+grid = list(c(3),c(5),c(7),c(10),c(3,3),c(5,5),c(10,10),c(3,3,3),c(5,5,5),c(10,10,10))
+cv.mse = c()
+
+for (nodes in grid){
+  mse = c()
+  for (k in 1:5){
+    set = (round((k-1)*nrow(aba.train)/5)+1):round(k*nrow(aba.train)/5)
+    cv.test = aba.train[set,]
+    cv.train = aba.train[-set,]
+    
+    cv.model = neuralnet(Rings~Sex_I+Sex_F+Diameter+Height+Whole_weight+Shucked_weight+Viscera_weight+Shell_weight,data=cv.train,linear.output = F, hidden = nodes)
+    k.mse = mean((predict(cv.model,cv.test[,-c(11)])-cv.test[,c(11)])^2)
+    mse = c(mse,k.mse)
+  }
+  cv.mse = c(cv.mse,mean(mse))
+}
+```
+
+### Final Model
+```{r}
+ann <- neuralnet(Rings~Sex_I+Sex_F+Diameter+Height+Whole_weight+Shucked_weight+Viscera_weight+Shell_weight,data=aba.train,linear.output = F, hidden = grid[[which.min(cv.mse)]])
+```
+
+```{r}
+plot(ann)
+```
+```{r}
+print(paste("test MSE: ",mean((revert(predict(ann,aba.test.x))-aba.test.y)^2)))
+print(paste("test MAE: ",mean(abs(revert(predict(ann,aba.test.x))-aba.test.y))))
+```
+
+```{r}
+table(round(revert(predict(ann,aba.test.x)))-aba.test.y)
+```
+
+
 
 
 
